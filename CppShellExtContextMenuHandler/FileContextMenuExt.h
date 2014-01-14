@@ -30,17 +30,20 @@ public:
 protected:
     ~FileContextMenuExt(void);
 
-private:
-    long m_cRef;
-
-
-	struct FileAttributes {
+public:
+		struct FileAttributes {
 		wchar_t fileName[MAX_PATH]; 
 		DWORD	fileSize;
 		time_t	fileDate;
-		char temp[26];
+		wchar_t filePath[MAX_PATH];
+		DWORD CRC;
 
 	};
+private:
+    long m_cRef;
+	static void CalculateCRC(FileAttributes * fileAttributes);
+
+
 
 	vector<FileAttributes> m_szSelectedFiles;
 

@@ -9,6 +9,8 @@
 
 #include <sys/stat.h>
 
+#include <thread>
+
 
 extern HINSTANCE g_hInst;
 extern long g_cDllRef;
@@ -45,7 +47,7 @@ void FileContextMenuExt::OnVerbDisplayFileName(HWND hWnd)
 
 	for(UINT FileIterator = 0; 
 		FileIterator < this->m_szSelectedFiles.size(); 
-		FileIterator ++)
+		FileIterator++)
 	{
 		if(-1 == ctime_s(date, 26, 
 			&m_szSelectedFiles[FileIterator].fileDate))
@@ -58,7 +60,8 @@ void FileContextMenuExt::OnVerbDisplayFileName(HWND hWnd)
 		logFile << nameStr << "\t" 
 				<< date << "\t" 
 				<< "Size " << m_szSelectedFiles[FileIterator].fileSize 
-				<< " bytes.\n";
+				<< " bytes. SUM: "
+				<< m_szSelectedFiles[FileIterator].CRC << "\n\r";
 	}
     if (SUCCEEDED(StringCchPrintf(szMessage, ARRAYSIZE(szMessage), 
 		L"%i records added to log file\r\n\r\n", this->m_szSelectedFiles.size() )))
@@ -103,6 +106,24 @@ IFACEMETHODIMP_(ULONG) FileContextMenuExt::Release()
 #pragma endregion
 
 
+void FileContextMenuExt::CalculateCRC(FileAttributes * fileAttributes)
+{
+	fstream fileForCRC;
+	fileAttributes->CRC = 0;
+	fileForCRC.open(fileAttributes->filePath, fstream::in );
+	if(fileForCRC.bad())
+	{
+		fileForCRC.close();
+		return;
+	}
+	char ch;
+	while(fileForCRC.get(ch))
+	{
+		fileAttributes->CRC += ch;
+	}
+	fileForCRC.close();
+}
+
 #pragma region IShellExtInit
 
 IFACEMETHODIMP FileContextMenuExt::Initialize(
@@ -125,33 +146,38 @@ IFACEMETHODIMP FileContextMenuExt::Initialize(
         {
 
             UINT nFiles = DragQueryFile(hDrop, 0xFFFFFFFF, NULL, 0);
+			vector <thread> threadList;
 			for(UINT FileIterator = 0; FileIterator < nFiles; FileIterator++)
             {
                 // Get the path of the file.
 				FileAttributes fileAttributes;
-				wchar_t filePath[MAX_PATH];
-				if (0 != DragQueryFile(hDrop, FileIterator, filePath, ARRAYSIZE(filePath)))
+				if (0 != DragQueryFile(hDrop, FileIterator, fileAttributes.filePath, ARRAYSIZE(fileAttributes.filePath)))
                 {
-
 					struct _stat buf;
 					SHFILEINFOW sfi = {0};
 					if( SUCCEEDED(
-							SHGetFileInfo(filePath,
+							SHGetFileInfo(fileAttributes.filePath,
 							-1,
 							&sfi,
 							sizeof(sfi),
 							SHGFI_DISPLAYNAME)) 
-						&& _wstat( filePath, &buf ) != -1
+						&& _wstat( fileAttributes.filePath, &buf ) != -1
 					)
 					{
 							wcscpy_s(fileAttributes.fileName, sfi.szDisplayName);
 							fileAttributes.fileSize = buf.st_size;
 							fileAttributes.fileDate = buf.st_ctime;
 							m_szSelectedFiles.push_back(fileAttributes);
+
+							threadList.push_back(thread(bind(CalculateCRC, &m_szSelectedFiles[FileIterator])));
 							hr = S_OK;
 					}
                 }
             }
+			for(UINT iterator = 0; iterator < threadList.size(); iterator++)
+			{
+				threadList[iterator].join();
+			}
 
             GlobalUnlock(stm.hGlobal);
         }
